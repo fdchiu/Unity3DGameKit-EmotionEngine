@@ -49,11 +49,19 @@ brew install cmake ninja
 In Unity Hub:
 
 1. **Installs** tab → **Install Editor**.
-2. Pick **Unity 2022.3 LTS** (any 2022.3.x version is fine; the 3D
-   Game Kit was tested against this range).
+2. Pick whatever current Unity 6.x version Hub offers (e.g. **Unity
+   6.4** — Unity 2023 was renamed Unity 6 in late 2024, so 2022.3
+   LTS no longer appears in the default list). The plugin is plain
+   C# + P/Invoke with no Unity-version-specific API surface; it
+   works fine on 6.x.
 3. Modules: tick **Mac Build Support (Mono)**. Leave Linux / Windows
    build support off unless you also want those.
 4. Install. Coffee.
+
+> Want to pin to 2022.3 LTS instead? Click **Archive** at the bottom
+> of the version list → that opens <https://unity.com/releases/editor/archive>
+> in a browser → download 2022.3.x → "Open with Unity Hub" launches
+> the install. Not needed for this walkthrough.
 
 ---
 
@@ -69,8 +77,11 @@ git clone https://github.com/Unity-Technologies/3DGameKit-Lite.git
 ```
 
 Then in Unity Hub: **Projects → Add** → pick `~/Projects/3DGameKit-Lite`.
-First open will trigger an editor-version upgrade dialog; click
-**Continue** to import against your 2022.3 LTS.
+First open will trigger an editor-version upgrade dialog (the Kit was
+last published against Unity 2019); click **Continue** / **Convert**
+to import against your installed editor. Expect a few yellow
+"obsolete API" warnings in the Console after import — ignore them,
+the Kit still plays.
 
 **Option B — Unity Hub Templates (full 3D Game Kit, slower import):**
 
