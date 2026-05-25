@@ -1,0 +1,19 @@
+# macOS AppleDouble sidecars (only appear on external volumes)
+._*
+.DS_Store
+
+# Unity-generated (callers drop this folder into a real Unity project;
+# these files are noise in this scaffold repo)
+Library/
+Temp/
+Obj/
+Logs/
+UserSettings/
+*.csproj
+*.sln
+*.unityproj
+
+# Editor-only files for the sample
+Assets/Plugins/EmotionEngine/macOS/libGameVoiceNativeSDK.dylib
+Assets/Plugins/EmotionEngine/Windows/GameVoiceNativeSDK.dll
+Assets/Plugins/EmotionEngine/Linux/libGameVoiceNativeSDK.so
