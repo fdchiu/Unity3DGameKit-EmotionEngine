@@ -86,7 +86,10 @@ mkdir -p "$PLUGIN_DEST"
 # Use rsync to preserve structure and overwrite changed files only.
 rsync -a --delete-excluded \
   --exclude 'macOS/libGameVoiceNativeSDK.dylib' \
+  --exclude '._*' --exclude '.DS_Store' \
   "$PLUGIN_SRC/" "$PLUGIN_DEST/"
+# Also strip any stale sidecars Unity may have imported on a prior run.
+find "$PLUGIN_DEST" -name "._*" -delete 2>/dev/null || true
 
 # --- 3. drop dylib --------------------------------------------------
 

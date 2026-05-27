@@ -31,6 +31,12 @@ namespace EmotionEngine
         readonly EmotionEngineConfig _config;
         bool _disposed;
 
+        // session_id from the HMAC mint response. Must travel back to
+        // the backend on every /v1/game/voice/* call (in the JSON body's
+        // "session_id" field) so it matches the JWT's session_id claim,
+        // otherwise the backend rejects with "session_mismatch".
+        string _mintedSessionId;
+
         // Pinned native string allocations — kept alive for the
         // lifetime of the runtime so the C side's pointer stays valid.
         GCHandle[] _pinnedStrings;
@@ -90,12 +96,33 @@ namespace EmotionEngine
                 throw new InvalidOperationException("Already started");
             _config.Validate();
 
+            // Mint a runtime JWT via HMAC if SDK key creds are present and
+            // BearerToken isn't already set. Mirrors game_voice_sdk's auth.py.
+            // Without this, the native SDK has no Bearer header for any
+            // /v1/game/voice/* call and the backend returns
+            // "invalid_runtime_token: Missing runtime bearer token".
+            string effectiveBearerToken = _config.BearerToken;
+            if (string.IsNullOrWhiteSpace(effectiveBearerToken)
+                && !string.IsNullOrWhiteSpace(_config.SdkApiKey))
+            {
+                var mint = SdkAuth.MintRuntimeToken(_config);
+                effectiveBearerToken = mint.RuntimeSessionToken;
+                // Remember the session_id so we can inject it into every
+                // state / event JSON. The native runtime has no
+                // GV_SetSessionId; without this, every /v1/game/voice/*
+                // POST sends "session_id":"gamevoice-session" (the
+                // native default) and the backend rejects with
+                // "session_mismatch" because the JWT's session_id claim
+                // is `unity-...`.
+                _mintedSessionId = mint.SessionId;
+            }
+
             var native = new GV_Config();
             GV.GV_DefaultConfig(ref native);
 
             // Pin strings + write pointers into the struct.
             _backendBaseUrl = PinUtf8(_config.BackendBaseUrl);
-            _bearerToken = PinUtf8(_config.BearerToken);
+            _bearerToken = PinUtf8(effectiveBearerToken);
             _username = PinUtf8(_config.Username);
             _agentName = PinUtf8(_config.AgentName);
             _prompt = PinUtf8(_config.Prompt);
@@ -180,7 +207,8 @@ namespace EmotionEngine
         public void SetLatestStateJson(string stateJson)
         {
             ThrowIfNotRunning();
-            using var s = new ScopedUtf8(stateJson);
+            string injected = InjectSessionId(stateJson);
+            using var s = new ScopedUtf8(injected);
             CheckResult(GV.GV_SetLatestStateJson(_handle, s.Ptr), nameof(GV.GV_SetLatestStateJson));
         }
 
@@ -190,8 +218,42 @@ namespace EmotionEngine
         public void PostEventJson(string eventJson)
         {
             ThrowIfNotRunning();
-            using var s = new ScopedUtf8(eventJson);
+            string injected = InjectSessionId(eventJson);
+            using var s = new ScopedUtf8(injected);
             CheckResult(GV.GV_PostEventJson(_handle, s.Ptr), nameof(GV.GV_PostEventJson));
+        }
+
+        // Insert `"session_id":"<minted>"` into a top-level JSON object
+        // if the caller didn't already include one. The native runtime
+        // adopts whatever session_id arrives in the state/event JSON
+        // (see BackendGameVoiceRuntime::MergeSessionId), so this is the
+        // only way to keep it aligned with the JWT's session_id claim.
+        // Naive string-level injection — only safe because state/event
+        // JSON we produce is always a top-level object.
+        string InjectSessionId(string json)
+        {
+            if (string.IsNullOrEmpty(_mintedSessionId) || string.IsNullOrEmpty(json))
+                return json;
+            if (json.IndexOf("\"session_id\"", System.StringComparison.Ordinal) >= 0)
+                return json; // caller already supplied one; respect it
+            string trimmed = json.TrimStart();
+            if (trimmed.Length == 0 || trimmed[0] != '{')
+                return json; // not a top-level object; leave alone
+            int openBrace = json.IndexOf('{');
+            string escaped = _mintedSessionId
+                .Replace("\\", "\\\\")
+                .Replace("\"", "\\\"");
+            string insert = "\"session_id\":\"" + escaped + "\"";
+            // Empty object "{}" → "{"session_id":"..."}"
+            // Non-empty → insert before the first existing field, with a comma.
+            int afterOpen = openBrace + 1;
+            // skip whitespace
+            while (afterOpen < json.Length && char.IsWhiteSpace(json[afterOpen])) afterOpen++;
+            if (afterOpen < json.Length && json[afterOpen] == '}')
+            {
+                return json.Substring(0, openBrace + 1) + insert + json.Substring(afterOpen);
+            }
+            return json.Substring(0, openBrace + 1) + insert + "," + json.Substring(openBrace + 1);
         }
 
         public void SubmitTranscriptJson(string transcript)
